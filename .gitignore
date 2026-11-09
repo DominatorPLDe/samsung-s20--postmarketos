@@ -1,0 +1,18 @@
+# Compiled binaries & build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.a
+modules.order
+Module.symvers
+
+# Temporary & editor files
+*.bak
+*.pre_*
+*~
+*.swp
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db

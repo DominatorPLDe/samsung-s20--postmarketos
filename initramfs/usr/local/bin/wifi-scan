@@ -1,0 +1,5 @@
+#!/bin/sh
+rfkill unblock all 2>/dev/null || true
+ip link set wlan0 up 2>/dev/null || true
+echo "Scanning for available Wi-Fi networks on wlan0..."
+iw dev wlan0 scan 2>/dev/null | grep -E "SSID:|signal:" || echo "No networks found or wlan0 not ready."

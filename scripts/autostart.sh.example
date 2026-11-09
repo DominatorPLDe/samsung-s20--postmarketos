@@ -1,0 +1,28 @@
+#!/bin/sh
+# /data/scripts/autostart.sh - Vorlage fuer benutzereigene Hintergrunddienste
+#
+# Dieser Hook wird von /init nach erfolgreichem Einhaengen von /data
+# automatisch im Hintergrund ausgefuehrt.
+#
+# Speicherort auf dem Handy: /data/scripts/autostart.sh
+# Berechtigungen: chmod +x /data/scripts/autostart.sh
+
+sleep 1
+export PATH=/data/bin:/bin:/sbin:/usr/bin:/usr/sbin:$PATH
+export LD_LIBRARY_PATH=/data/lib:/usr/lib:/lib:$LD_LIBRARY_PATH
+
+# 1. CPU-Frequenzsteuerung aktivieren (Modus: auto / sparsam / boost)
+if [ -x /data/modus.sh ]; then
+    /data/modus.sh auto
+fi
+
+# 2. Thermal-Guard Wächter starten (Temperaturschutz mit Hysterese)
+if [ -x /data/thermal_guard.sh ]; then
+    killall thermal_guard.sh 2>/dev/null
+    nohup /data/thermal_guard.sh >> /data/logs/thermal_guard.log 2>&1 &
+fi
+
+# 3. Beispiel: Eigene Server- oder Container-Dienste starten
+# if [ -x /data/my_service/start.sh ]; then
+#     nohup /data/my_service/start.sh >> /data/logs/my_service.log 2>&1 &
+# fi

@@ -1,0 +1,985 @@
+// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+/*
+ * Samsung Exynos 990 SoC device tree source
+ *
+ * Copyright (c) 2024, Igor Belwon <igor.belwon@mentallysanemainliners.org>
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/exynos990.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/thermal/thermal.h>
+
+/ {
+	compatible = "samsung,exynos990";
+	#address-cells = <2>;
+	#size-cells = <1>;
+
+	interrupt-parent = <&gic>;
+
+	aliases {
+		pinctrl0 = &pinctrl_alive;
+		pinctrl1 = &pinctrl_cmgp;
+		pinctrl2 = &pinctrl_hsi1;
+		pinctrl3 = &pinctrl_hsi2;
+		pinctrl4 = &pinctrl_peric0;
+		pinctrl5 = &pinctrl_peric1;
+		pinctrl6 = &pinctrl_vts;
+	};
+
+	arm-a55-pmu {
+		compatible = "arm,cortex-a55-pmu";
+		interrupts = <GIC_SPI 163 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 164 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 165 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 166 IRQ_TYPE_LEVEL_HIGH>;
+
+		interrupt-affinity = <&cpu0>,
+				     <&cpu1>,
+				     <&cpu2>,
+				     <&cpu3>;
+	};
+
+	arm-a76-pmu {
+		compatible = "arm,cortex-a76-pmu";
+		interrupts = <GIC_SPI 167 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+
+		interrupt-affinity = <&cpu4>,
+				     <&cpu5>;
+	};
+
+	/* There's no PMU model for cluster2, which are the Mongoose cores. */
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu-map {
+			cluster0 {
+				core0 {
+					cpu = <&cpu0>;
+				};
+
+				core1 {
+					cpu = <&cpu1>;
+				};
+
+				core2 {
+					cpu = <&cpu2>;
+				};
+
+				core3 {
+					cpu = <&cpu3>;
+				};
+			};
+
+			cluster1 {
+				core0 {
+					cpu = <&cpu4>;
+				};
+
+				core1 {
+					cpu = <&cpu5>;
+				};
+			};
+
+			cluster2 {
+				core0 {
+					cpu = <&cpu6>;
+				};
+
+				core1 {
+					cpu = <&cpu7>;
+				};
+			};
+		};
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x0>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <330>;
+			#cooling-cells = <2>;
+		};
+
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x1>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <330>;
+			#cooling-cells = <2>;
+		};
+
+		cpu2: cpu@2 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x2>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <330>;
+			#cooling-cells = <2>;
+		};
+
+		cpu3: cpu@3 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x3>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <330>;
+			#cooling-cells = <2>;
+		};
+
+		cpu4: cpu@100 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a76";
+			reg = <0x4>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <1024>;
+			#cooling-cells = <2>;
+		};
+
+		cpu5: cpu@101 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a76";
+			reg = <0x5>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <1024>;
+			#cooling-cells = <2>;
+		};
+
+		cpu6: cpu@200 {
+			device_type = "cpu";
+			compatible = "samsung,mongoose-m5";
+			reg = <0x6>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <1024>;
+			#cooling-cells = <2>;
+		};
+
+		cpu7: cpu@201 {
+			device_type = "cpu";
+			compatible = "samsung,mongoose-m5";
+			reg = <0x7>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <1024>;
+			#cooling-cells = <2>;
+		};
+	};
+
+	oscclk: clock-osc {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-output-names = "oscclk";
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "hvc";
+	};
+
+	ufs_unipro: ufs-unipro {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <26000000>;
+	};
+
+	ufs_core_clock: ufs-core-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <166562500>;
+	};
+
+	/*
+	 * The AP<->APM mailbox needs a pclk. exynos990 has no CMU_APM driver
+	 * in mainline yet; the ALIVE domain is already clocked by the
+	 * bootloader, so stub it.
+	 */
+	apm_mbox_pclk: clock-apm-mbox {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <26000000>;
+		clock-output-names = "apm_mbox_pclk";
+	};
+
+	firmware {
+		acpm_ipc: power-management {
+			compatible = "samsung,exynos990-acpm-ipc";
+			mboxes = <&ap2apm_mailbox>;
+			shmem = <&apm_sram>;
+
+			pmic-probe {
+				compatible = "samsung,exynos990-pmic-probe";
+			};
+		};
+	};
+
+	/* Touch (S6SY761) helpers: the PERIC1 sub-CMU isn't modelled, so stub
+	 * the HSI2C clock; the two rails are real S2MPS19 LDOs (enabled via ACPM),
+	 * the fixed-regulators just satisfy the driver's vdd/avdd bulk-get. */
+	/* CMU_G3D isn't modelled; stub the GPU clock like the touch one. */
+	gpu_clk: gpu-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <800000000>;
+		clock-output-names = "gpu_clk";
+	};
+
+	tsp_i2c_clk: tsp-i2c-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+		clock-output-names = "tsp_i2c_clk";
+	};
+
+	/* Speaker-amp i2c bus clock (hsi2c@10680000). CMU_PERIC1 i2c gate is not
+	 * modelled; the bootloader leaves it clocked. 200MHz ipclk source. */
+	amp_i2c_clk: amp-i2c-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+		clock-output-names = "amp_i2c_clk";
+	};
+
+	/* CS35L41 supplies: VA = 1.8V analog, VP = boost input (battery rail).
+	 * Fixed always-on stubs; the amps are already powered by the PMIC. */
+	amp_va: regulator-amp-va {
+		compatible = "regulator-fixed";
+		regulator-name = "cs35l41-va";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+	};
+
+	amp_vp: regulator-amp-vp {
+		compatible = "regulator-fixed";
+		regulator-name = "cs35l41-vp";
+		regulator-min-microvolt = <3800000>;
+		regulator-max-microvolt = <3800000>;
+		regulator-always-on;
+	};
+
+	/* Bluetooth UART clock. The CMU is not modelled and the bootloader leaves
+	 * UART1 clocked; samsung_tty derives the baud divisor from this rate, so it
+	 * must match the real ipclk_uart1 (200MHz, the Exynos UART baud source). */
+	bt_uart_clk: bt-uart-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+		clock-output-names = "bt_uart_clk";
+	};
+
+	/* Samsung Galaxy S20 Ultra 5G battery pack. Parameters from the factory
+	 * battery config: charge-termination (float) voltage 4.38V, ~5000 mAh.
+	 * The max77705 charger uses voltage-max-design as the CV float target, so
+	 * this must match the cell - it is the safety-critical value. */
+	z3s_battery: battery {
+		compatible = "simple-battery";
+		device-chemistry = "lithium-ion";
+		voltage-max-design-microvolt = <4380000>;
+		voltage-min-design-microvolt = <3300000>;
+		charge-full-design-microamp-hours = <5000000>;
+		constant-charge-voltage-max-microvolt = <4380000>;
+		constant-charge-current-max-microamp = <2100000>;
+		charge-term-current-microamp = <360000>;
+	};
+
+	tsp_vdd: regulator-tsp-vdd {
+		compatible = "regulator-fixed";
+		regulator-name = "tsp_vdd";
+		regulator-always-on;
+	};
+
+	tsp_avdd: regulator-tsp-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "tsp_avdd";
+		regulator-always-on;
+	};
+
+	soc: soc@0 {
+		compatible = "simple-bus";
+		ranges = <0x0 0x0 0x0 0x20000000>;
+
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		chipid@10000000 {
+			compatible = "samsung,exynos990-chipid",
+				     "samsung,exynos850-chipid";
+			reg = <0x10000000 0x100>;
+		};
+
+		gic: interrupt-controller@10101000 {
+			compatible = "arm,gic-400";
+			reg = <0x10101000 0x1000>,
+			      <0x10102000 0x1000>,
+			      <0x10104000 0x2000>,
+			      <0x10106000 0x2000>;
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			interrupts = <GIC_PPI 9 (GIC_CPU_MASK_SIMPLE(8) |
+						 IRQ_TYPE_LEVEL_HIGH)>;
+			#address-cells = <0>;
+			#size-cells = <1>;
+		};
+
+		pinctrl_peric0: pinctrl@10430000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x10430000 0x1000>;
+			interrupts = <GIC_SPI 392 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		pinctrl_peric1: pinctrl@10730000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x10730000 0x1000>;
+			interrupts = <GIC_SPI 417 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		pinctrl_hsi1: pinctrl@13040000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x13040000 0x1000>;
+			interrupts = <GIC_SPI 312 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		pinctrl_hsi2: pinctrl@13c30000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x13c30000 0x1000>;
+			interrupts = <GIC_SPI 322 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		pinctrl_vts: pinctrl@15580000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x15580000 0x1000>;
+		};
+
+		pinctrl_alive: pinctrl@15850000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x15850000 0x1000>;
+
+			wakeup-interrupt-controller {
+				compatible = "samsung,exynos990-wakeup-eint",
+					     "samsung,exynos850-wakeup-eint",
+					     "samsung,exynos7-wakeup-eint";
+			};
+		};
+
+		pinctrl_cmgp: pinctrl@15c30000 {
+			compatible = "samsung,exynos990-pinctrl";
+			reg = <0x15c30000 0x1000>;
+		};
+
+		/* WORKING TREE - 31 Oct. 2024 - ibelwon */
+
+		cmu_top: clock-controller@1a330000 {
+			compatible = "samsung,exynos990-cmu-top";
+			reg = <0x1a330000 0x8000>;
+			#clock-cells = <1>;
+
+			clocks = <&oscclk>;
+			clock-names = "oscclk";
+		};
+
+		cmu_hsi0: clock-controller@10a00000 {
+			compatible = "samsung,exynos990-cmu-hsi0";
+			reg = <0x10a00000 0x8000>;
+			#clock-cells = <1>;
+
+			clocks = <&oscclk>, <&cmu_top CLK_DOUT_CMU_HSI0_BUS>,
+					 <&cmu_top CLK_DOUT_CMU_HSI0_USB31DRD>,
+					 <&cmu_top CLK_DOUT_CMU_HSI0_USBDP_DEBUG>,
+					 <&cmu_top CLK_DOUT_CMU_HSI0_DPGTC>;
+			clock-names = "oscclk", "dout_hsi0_bus",
+						  "dout_hsi0_usb31drd",
+						  "dout_hsi0_usbdp_debug",
+						  "dout_hsi0_dpgtc";
+
+		};
+
+		/* CMU_AUD: the audio clock management unit. Derives audif/uaif/bus/
+		 * cnt and the two AUD PLLs from CMU_TOP's aud_cpu feed. Lives inside
+		 * the AUD power domain, so it must be powered before probe. */
+		cmu_aud: clock-controller@18c00000 {
+			compatible = "samsung,exynos990-cmu-aud";
+			reg = <0x18c00000 0x8000>;
+			#clock-cells = <1>;
+
+			clocks = <&oscclk>, <&cmu_top CLK_DOUT_CMU_AUD_CPU>;
+			clock-names = "oscclk", "dout_aud_cpu";
+
+			power-domains = <&pd_aud>;
+		};
+
+		sysreg_hsi1: sysreg@13020000 {
+			compatible = "samsung,exynosautov9-fsys2-sysreg",
+				     "samsung,exynosautov9-sysreg", "syscon";
+			reg = <0x13020000 0x1000>;
+		};
+
+		ufs_0: ufs@13100000 {
+			compatible = "samsung,exynos990-ufs";
+			reg = <0x13100000 0x200>,
+			      <0x13101100 0x200>,
+			      <0x13180000 0x8000>,
+			      <0x132a0000 0x100>;
+			reg-names = "hci", "vs_hci", "unipro", "ufsp";
+			interrupts = <GIC_SPI 321 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ufs_core_clock>,
+				<&ufs_core_clock>;
+			clock-names = "core_clk", "sclk_unipro_main";
+			freq-table-hz = <0 0>, <0 0>;
+			pinctrl-0 = <&ufs_rst_n &ufs_refclk_out>;
+			pinctrl-names = "default";
+			phys = <&ufs_0_phy>;
+			phy-names = "ufs-phy";
+			samsung,sysreg = <&sysreg_hsi1 0x700>;
+			status = "okay";
+		};
+
+		mmc_2: mmc@132e0000 {
+			compatible = "samsung,exynos7-dw-mshc";
+			reg = <0x132e0000 0x2000>;
+			interrupts = <GIC_SPI 313 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clocks = <&cmu_top CLK_GOUT_CMU_HSI1_BUS>,
+				 <&cmu_top CLK_GOUT_CMU_HSI1_MMC_CARD>;
+			clock-names = "biu", "ciu";
+			fifo-depth = <0x40>;
+			card-detect-delay = <200>;
+			clock-frequency = <800000000>;
+			samsung,dw-mshc-ciu-div = <3>;
+			samsung,dw-mshc-sdr-timing = <3 0 2 0>;
+			samsung,dw-mshc-ddr-timing = <3 0 2 1>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&sd2_clk &sd2_cmd &sd2_bus1 &sd2_bus4>;
+			bus-width = <4>;
+			/* z3s-sd-stability: the card-detect GPIO (gpa1-5) glitches under
+			 * sustained I/O and triggers endless card re-init (400kHz<->HS
+			 * storm that stalls all reads). Ignore the flaky CD line and POLL
+			 * instead -- boot-safe: polling keeps retrying until the ACPM shim
+			 * powers the rails (~1.2s), unlike non-removable which inits once.
+			 * Also cap the bus at a stable 25 MHz. */
+			broken-cd;
+			disable-wp;
+			max-frequency = <25000000>;
+			cap-sd-highspeed;
+			status = "disabled";
+		};
+
+		ufs_0_phy: phy@13104000 {
+			compatible = "samsung,exynos990-ufs-phy";
+			reg = <0x13104000 0x3000>;
+			reg-names = "phy-pma";
+			samsung,pmu-syscon = <&pmu_system_controller>;
+			#phy-cells = <0>;
+			clocks = <&oscclk>;
+			clock-names = "ref_clk";
+			status = "okay";
+		};
+
+		/* PERIC1 system registers — the exynos-usi driver writes the USI mode
+		 * (I2C) here to mux the touch bus. */
+		sysreg_peric1: syscon@10720000 {
+			compatible = "samsung,exynos990-peric1-sysreg", "syscon";
+			reg = <0x10720000 0x10000>;
+		};
+
+		/* Touch panel (Samsung S6SY761) on HSI2C15, behind a PERIC1 USI block.
+		 * The USI MUST be muxed to I2C first: exynos-usi writes SW_CONF
+		 * (sysreg_peric1 + 0x1024) from samsung,mode, THEN of_platform_populate
+		 * probes the hsi2c child -> bus is already I2C, no tx-timeout hang. */
+		usi_touch: usi@108d00c0 {
+			compatible = "samsung,exynos850-usi";
+			reg = <0x108d00c0 0x20>;
+			ranges;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
+			clock-names = "pclk", "ipclk";
+			samsung,sysreg = <&sysreg_peric1 0x1024>;
+			samsung,mode = <3>; /* USI_V2_I2C */
+			status = "okay";
+
+			hsi2c_15: i2c@108d0000 {
+				compatible = "samsung,exynosautov9-hsi2c";
+				reg = <0x108d0000 0xc0>;
+				interrupts = <GIC_SPI 420 IRQ_TYPE_LEVEL_HIGH>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
+				clock-names = "hsi2c", "hsi2c_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&hsi2c15_bus>;
+				status = "okay";
+
+				touchscreen@48 {
+					compatible = "samsung,s6sy761";
+					reg = <0x48>;
+					interrupt-parent = <&gpa1>;
+					interrupts = <0 IRQ_TYPE_LEVEL_LOW>;
+					vdd-supply = <&s2dos05_ldo2>;
+					avdd-supply = <&s2dos05_ldo3>;
+				};
+			};
+		};
+
+		/* PERIC0 system registers — the exynos-usi driver writes USI mode (I2C)
+		 * here to mux the display sub-PMIC bus. */
+		sysreg_peric0: syscon@10420000 {
+			compatible = "samsung,exynos990-peric0-sysreg", "syscon";
+			reg = <0x10420000 0x10000>;
+		};
+
+		/* Display sub-PMIC bus: S2DOS05 @0x60 on HSI2C4 (PERIC0), behind a USI
+		 * block — mirrors the proven touch setup. exynos-usi muxes SW_CONF to I2C
+		 * (sysreg_peric0 + 0x1014 = usi_2) and clears the USI reset, THEN probes the hsi2c
+		 * child. The S2DOS05 powers the AMOLED panel (ELVSS) AND the touch rails
+		 * (LDO2 = tsp_io 1.8V, LDO3 = tsp_avdd 3.0V); enabling REG 0x03 bits 1+2
+		 * should finally wake the Y79A touch chip on hsi2c@108d0000. */
+		usi_dp: usi@105900c0 {
+			compatible = "samsung,exynos850-usi";
+			reg = <0x105900c0 0x20>;
+			ranges;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
+			clock-names = "pclk", "ipclk";
+			samsung,sysreg = <&sysreg_peric0 0x1014>;
+			samsung,mode = <3>; /* USI_V2_I2C */
+			status = "okay";
+
+			hsi2c_4: i2c@10590000 {
+				compatible = "samsung,exynosautov9-hsi2c";
+				reg = <0x10590000 0xc0>;
+				interrupts = <GIC_SPI 403 IRQ_TYPE_LEVEL_HIGH>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
+				clock-names = "hsi2c", "hsi2c_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&hsi2c4_bus>;
+				status = "okay";
+
+				/* Display sub-PMIC. Only the touch rails are exposed - the
+				 * panel rails (BUCK1/LDO1/LDO4/ELVSS) are left alone so the
+				 * regulator core can never disable them and blank the screen. */
+				s2dos05: pmic@60 {
+					compatible = "samsung,s2dos05";
+					reg = <0x60>;
+
+					regulators {
+						s2dos05_ldo2: ldo2 {
+							regulator-name = "tsp_io";
+							regulator-min-microvolt = <1800000>;
+							regulator-max-microvolt = <1800000>;
+							regulator-boot-on;
+						};
+
+						s2dos05_ldo3: ldo3 {
+							regulator-name = "tsp_avdd";
+							regulator-min-microvolt = <3000000>;
+							regulator-max-microvolt = <3000000>;
+							regulator-boot-on;
+						};
+					};
+				};
+			};
+		};
+
+		/* MAX77705 PMIC bus: dedicated HSI2C7 @0x105C0000 (PERIC0), pins gpp1-6/7.
+		 * The block routes through a USI-I2C-v2 front end, so it needs the exynos-usi
+		 * wrapper to mux SW_CONF to I2C and clear the USI reset, mirroring the s2dos05
+		 * and touch buses. USI SFR is base+0xc0 = 0x105c00c0; SW_CONF is sysreg_peric0
+		 * + 0x1020 (usi7, contiguous with usi4=0x1014 on hsi2c4). We bring up ONLY the
+		 * fuel gauge (ModelGauge m5 at 0x36, MAX17042-compatible) for read-only battery
+		 * state; the PMIC/charger/MUIC at 0x66/0x69/0x4a need the max77705 MFD, which is
+		 * not in mainline yet. */
+		usi_pmic: usi@105c00c0 {
+			compatible = "samsung,exynos850-usi";
+			reg = <0x105c00c0 0x20>;
+			ranges;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
+			clock-names = "pclk", "ipclk";
+			samsung,sysreg = <&sysreg_peric0 0x1020>;
+			samsung,mode = <3>; /* USI_V2_I2C */
+			status = "okay";
+
+			hsi2c_7: i2c@105c0000 {
+				compatible = "samsung,exynosautov9-hsi2c";
+				reg = <0x105c0000 0xc0>;
+				interrupts = <GIC_SPI 404 IRQ_TYPE_LEVEL_HIGH>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
+				clock-names = "hsi2c", "hsi2c_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&hsi2c7_bus>;
+				status = "okay";
+
+				/* MAX77705 fuel gauge (ModelGauge m5). Read-only battery
+				 * state: capacity, voltage, current, temperature. The gauge
+				 * is already configured by the bootloader, so the driver
+				 * only reads (it reloads the model on power-on-reset only). */
+				fuelgauge@36 {
+					compatible = "maxim,max17050";
+					reg = <0x36>;
+					maxim,rsns-microohm = <5000>;
+					// power-supplies = <&z3s_charger>;
+				};
+
+				/* MAX77705 charger at 0x69 on the same bus. Standalone (no MFD):
+				 * it configures and enables charging from the z3s_battery info
+				 * (float 4.38V, ~5000 mAh). The PMIC interrupt is optional (driver
+				 * patched), so cable/charge state is polled - fine for the desktop,
+				 * which polls power state anyway. Reports ONLINE + Charging status. */
+				z3s_charger: charger@69 {
+					compatible = "maxim,max77705-charger";
+					reg = <0x69>;
+					status = "disabled";
+				};
+			};
+		};
+
+		/* CS35L41 speaker amps on hsi2c@10680000 (USI_I2C, gpp4), wrapped in
+		 * exynos-usi. THE KEY FIX: the USI block powers up held in reset
+		 * (USI_CON bit0); the wrapper clears it (proven - without it every i2c
+		 * transfer times out and i2cdetect finds nothing). The SW_CONF mode is
+		 * already I2C from the bootloader, so samsung,sysreg is omitted and the
+		 * driver (patched) only does the USI_CON reset. Two CS35L41 amps: 0x40
+		 * right (reset gpb2-5), 0x41 left (reset gpb2-4), INT shared on gpm24,
+		 * fed by ABOX UAIF3. Boost params are the y2s values (same SoC+amp). */
+		amp_usi: usi@106800c0 {
+			compatible = "samsung,exynos850-usi";
+			reg = <0x106800c0 0x20>;
+			ranges;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			clocks = <&amp_i2c_clk>, <&amp_i2c_clk>;
+			clock-names = "pclk", "ipclk";
+			samsung,mode = <3>; /* USI_V2_I2C */
+			samsung,clkreq-on;
+			status = "okay";
+
+			amp_i2c: i2c@10680000 {
+				compatible = "samsung,exynosautov9-hsi2c";
+				reg = <0x10680000 0xc0>;
+				interrupts = <GIC_SPI 414 IRQ_TYPE_LEVEL_HIGH>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				clocks = <&amp_i2c_clk>, <&amp_i2c_clk>;
+				clock-names = "hsi2c", "hsi2c_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&hsi2c31_bus>;
+				status = "okay";
+
+				cs35l41_r: cs35l41@40 {
+				#sound-dai-cells = <1>;
+				compatible = "cirrus,cs35l41";
+				reg = <0x40>;
+				reset-gpios = <&gpb2 5 0>;
+				VA-supply = <&amp_va>;
+				VP-supply = <&amp_vp>;
+				cirrus,boost-peak-milliamp = <4100>;
+				cirrus,boost-ind-nanohenry = <1000>;
+				cirrus,boost-cap-microfarad = <4>;
+				cirrus,gpio2-src-select = <0x4>;
+				cirrus,gpio2-output-enable;
+				cirrus,right-channel-amp;
+			};
+
+			cs35l41_l: cs35l41@41 {
+				#sound-dai-cells = <1>;
+				compatible = "cirrus,cs35l41";
+				reg = <0x41>;
+				reset-gpios = <&gpb2 4 0>;
+				VA-supply = <&amp_va>;
+				VP-supply = <&amp_vp>;
+				cirrus,boost-peak-milliamp = <4100>;
+				cirrus,boost-ind-nanohenry = <1000>;
+				cirrus,boost-cap-microfarad = <4>;
+				cirrus,gpio2-src-select = <0x4>;
+				cirrus,gpio2-output-enable;
+			};
+		};
+		};
+
+		/* Bluetooth: BCM4375 BT over UART1 (0x10840000, ALIVE domain, HW flow
+		 * control). This is the BT side of the BCM4375 combo (WiFi is the PCIe
+		 * side). The bluetooth serdev child drives BT_EN and the wake GPIOs;
+		 * hci_bcm loads the bcm4375B1 patchram (.hcd) from /lib/firmware/brcm. */
+		/* BT UART1 is a USI-serial-v2 block: like the i2c buses it needs the
+		 * exynos-usi wrapper to mux the USI to UART mode and clear its reset,
+		 * else the core does not communicate. USI SFR at uart_base+0xc0; SW_CONF
+		 * is sysreg_peric1 + 0x2000 (usi24, the peric1 UART channel). */
+		usi_bt: usi@108400c0 {
+			compatible = "samsung,exynos850-usi";
+			reg = <0x108400c0 0x20>;
+			ranges;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			clocks = <&bt_uart_clk>, <&bt_uart_clk>;
+			clock-names = "pclk", "ipclk";
+			samsung,sysreg = <&sysreg_peric1 0x1000>;
+			samsung,mode = <1>; /* USI_V2_UART */
+			samsung,clkreq-on;
+			status = "okay";
+
+			bt_uart: serial@10840000 {
+				compatible = "samsung,exynos850-uart";
+				reg = <0x10840000 0xc0>;
+				interrupts = <GIC_SPI 416 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&bt_uart_clk>, <&bt_uart_clk>;
+				clock-names = "uart", "clk_uart_baud0";
+				samsung,uart-fifosize = <256>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&uart1_bus_norts>;
+				status = "okay";
+
+				bluetooth {
+					compatible = "brcm,bcm4349-bt";
+					shutdown-gpios = <&gpm16 0 GPIO_ACTIVE_HIGH>;
+					device-wakeup-gpios = <&gpg1 1 GPIO_ACTIVE_HIGH>;
+					host-wakeup-gpios = <&gpa2 3 GPIO_ACTIVE_HIGH>;
+					max-speed = <3000000>;
+				};
+
+			};
+		};
+
+		/* G3D (GPU) power domain. PMU @0x15860000 + 0x2200; downstream calls this
+		 * "pd-embedded_g3d" (status reg +0x2204, mask 0x1). */
+		pd_g3d: power-domain@15862200 {
+			compatible = "samsung,exynos990-pd";
+			reg = <0x15862200 0x20>;
+			#power-domain-cells = <0>;
+			label = "G3D";
+		};
+
+		/* AUD (audio/ABOX) power domain. PMU @0x15860000 + 0x1900; downstream
+		 * "pd-aud" (config reg 0x15861900, status +0x1904, mask 0x1). If the
+		 * PMU cannot power it the exynos-pd poll just times out (no hang) and
+		 * cmu_aud probe fails gracefully. */
+		pd_aud: power-domain@15861900 {
+			compatible = "samsung,exynos990-pd";
+			reg = <0x15861900 0x20>;
+			samsung,need-smc = <0x18e10204>;
+			#power-domain-cells = <0>;
+			label = "AUD";
+		};
+
+		/* Mali-G77 MP11 (Valhall gen1, GPU id 0x9000). Panfrost's model table
+		 * stops at G57 upstream, so we add g77 alongside it. IRQs from the
+		 * downstream DT: JOB=301, MMU=302, GPU=300.
+		 * NOTE: panfrost is built as a MODULE and blacklisted from autoload -
+		 * load it by hand (modprobe panfrost). If the G3D power domain isn't
+		 * really on, touching GPU regs faults the CPU and hangs the phone; with
+		 * autoload off a power-cycle recovers without reflashing. */
+		gpu: gpu@18500000 {
+			compatible = "arm,mali-valhall-jm";
+			reg = <0x18500000 0x5000>;
+			interrupts = <GIC_SPI 301 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 302 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 300 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "job", "mmu", "gpu";
+			clocks = <&gpu_clk>;
+			clock-names = "core";
+			power-domains = <&pd_g3d>;
+			status = "okay";
+		};
+
+		/* Shared memory window into the APM (Cortex-M) coprocessor. */
+		apm_sram: sram@2039000 {
+			compatible = "mmio-sram";
+			reg = <0x2039000 0x38000>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0x2039000 0x38000>;
+		};
+
+		/* AP -> APM doorbell. exynos990 uses INTGR0 (0x08) << 16. */
+		ap2apm_mailbox: mailbox@15900000 {
+			compatible = "samsung,exynos990-mbox";
+			reg = <0x15900000 0x1000>;
+			clocks = <&apm_mbox_pclk>;
+			clock-names = "pclk";
+			interrupts = <GIC_SPI 41 IRQ_TYPE_LEVEL_HIGH>;
+			#mbox-cells = <0>;
+		};
+
+		pmu_system_controller: system-controller@11860000 {
+			compatible = "samsung,exynos850-pmu", "syscon";
+			reg = <0x15860000 0x10000>;
+
+			poweroff: syscon-poweroff {
+				compatible = "syscon-poweroff";
+				regmap = <&pmu_system_controller>;
+				offset = <0x030c>; /* PS_HOLD_CONTROL (exynos9830) */
+				mask = <0x100>;    /* PS_HOLD_EN bit8 */
+				value = <0x0>;     /* drive PS_HOLD low -> PMIC cuts power */
+			};
+
+			reboot: syscon-reboot {
+				compatible = "syscon-reboot";
+				regmap = <&pmu_system_controller>;
+				offset = <0x3a00>; 
+				mask = <0x2>; 
+				value = <0x2>; 
+			};
+		};
+
+		usbdrd: usb@10e00000 {
+			compatible = "samsung,exynos850-dwusb3";
+			ranges = <0x0 0x10e00000 0x10000>;
+			clocks = <&cmu_hsi0 CLK_GOUT_HSI0_USB31DRD_BUS_CLK_EARLY>,
+				 <&cmu_hsi0 CLK_GOUT_HSI0_USB31DRD_REF_SOC_PLL>;
+			clock-names = "bus_early", "ref";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			status = "okay";
+
+			usbdrd_dwc3: usb@0 {
+				compatible = "snps,dwc3";
+				reg = <0x0 0x10000>;
+				interrupts = <GIC_SPI 310 IRQ_TYPE_LEVEL_HIGH>;
+				phys = <&usbdrd_phy 0>;
+				phy-names = "usb2-phy";
+			};
+		};
+
+		usbdrd_phy: phy@135d0000 {
+			compatible = "samsung,exynos990-usbdrd-phy";
+			reg = <0x10c00000 0x50000>;
+			clocks = <&cmu_hsi0 CLK_GOUT_HSI0_USB31DRD_ACLK_PHYCTRL>,
+				 	 <&oscclk>;
+			clock-names = "phy", "ref";
+			samsung,pmu-syscon = <&pmu_system_controller>;
+			#phy-cells = <1>;
+			status = "okay";
+		};
+		tmu_cpu: tmu@10090000 {
+			compatible = "samsung,exynos990-tmu";
+			reg = <0x10090000 0x800>;
+			interrupts = <GIC_SPI 478 IRQ_TYPE_LEVEL_HIGH>;
+			#thermal-sensor-cells = <1>;
+			status = "okay";
+		};
+	};
+
+	thermal-zones {
+		cpu-little-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+			thermal-sensors = <&tmu_cpu 8>;
+
+			trips {
+				little_passive: trip-point-0 {
+					temperature = <70000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+				little_critical: trip-point-1 {
+					temperature = <90000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&little_passive>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu-mid-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+			thermal-sensors = <&tmu_cpu 7>;
+
+			trips {
+				mid_passive: trip-point-0 {
+					temperature = <70000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+				mid_critical: trip-point-1 {
+					temperature = <90000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&mid_passive>;
+					cooling-device = <&cpu4 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu5 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu-big-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+			thermal-sensors = <&tmu_cpu 1>;
+
+			trips {
+				big_passive: trip-point-0 {
+					temperature = <70000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+				big_critical: trip-point-1 {
+					temperature = <90000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&big_passive>;
+					cooling-device = <&cpu6 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu7 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(8) | IRQ_TYPE_LEVEL_LOW)>;
+
+		/*
+		 * Non-updatable, broken stock Samsung bootloader does not
+		 * configure CNTFRQ_EL0
+		 */
+		clock-frequency = <26000000>;
+	};
+};
+
+#include "exynos990-pinctrl.dtsi"
+
+&gpq0 {
+	/* Statically assert BT UART nRTS on gpq0-2 by driving it low. This
+	 * UART's hardware auto-flow-control does not drive RTS - the
+	 * downstream uses samsung,rts-gpio-control - so mainline never
+	 * asserts it and the BT chip holds its reply. Force RTS low so the
+	 * chip always sends. */
+	bt_rts_hog {
+		gpio-hog;
+		gpios = <2 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "bt-uart-rts";
+	};
+};

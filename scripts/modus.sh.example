@@ -1,0 +1,48 @@
+#!/bin/sh
+# /data/modus.sh [auto|sparsam|boost]
+MODE="${1:-auto}"
+
+JAVA_PID=$(pidof java 2>/dev/null || ps | grep java | grep -v grep | awk '{print $1}')
+
+if [ "$MODE" = "auto" ]; then
+    echo "auto" > /data/modus
+    rm -f /data/m5_max
+    if [ -n "$JAVA_PID" ]; then
+        /data/bin/taskset -a -cp 0-7 $JAVA_PID >/dev/null 2>&1
+    fi
+    for p in $(pidof ttyd python3 dropbear 2>/dev/null); do
+        /data/bin/taskset -a -cp 0-7 $p >/dev/null 2>&1
+    done
+    /data/thermal_guard.sh force >/dev/null 2>&1
+    echo "[+] Modus: AUTO (EAS/schedutil steuert alle Kerne 0-7, Cap-Tabelle aktiv)"
+
+elif [ "$MODE" = "sparsam" ]; then
+    echo "sparsam" > /data/modus
+    echo "546000" > /data/m5_max
+    echo 546000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+    if [ -n "$JAVA_PID" ]; then
+        /data/bin/taskset -a -cp 4-5 $JAVA_PID >/dev/null 2>&1
+    fi
+    for p in $(pidof ttyd python3 dropbear 2>/dev/null); do
+        /data/bin/taskset -a -cp 0-3 $p >/dev/null 2>&1
+    done
+    /data/thermal_guard.sh force >/dev/null 2>&1
+    echo "[+] Modus: SPARSAM (M5 max 546 MHz, Java auf CPU 4-5, Dienste auf CPU 0-3)"
+
+elif [ "$MODE" = "boost" ]; then
+    echo "boost" > /data/modus
+    echo "1898000" > /data/m5_max
+    echo 1898000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+    if [ -n "$JAVA_PID" ]; then
+        /data/bin/taskset -a -cp 4-7 $JAVA_PID >/dev/null 2>&1
+    fi
+    for p in $(pidof ttyd python3 dropbear 2>/dev/null); do
+        /data/bin/taskset -a -cp 0-3 $p >/dev/null 2>&1
+    done
+    /data/thermal_guard.sh force >/dev/null 2>&1
+    echo "[+] Modus: BOOST (M5 max 1898 MHz, Java auf CPU 4-7)"
+
+else
+    echo "Usage: $0 [auto|sparsam|boost]"
+    exit 1
+fi

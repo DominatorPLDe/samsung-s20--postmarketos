@@ -1,0 +1,347 @@
+#!/bin/sh
+# /init  -  Galaxy S20+ (SM-G985F / y2slte)  Alpine-RAM-Server
+# Reihenfolge: Mounts -> Konsole -> SSH + USB-Gadget -> Wi-Fi (Hintergrund) -> Display Off -> Shell
+# Regel: Nichts in diesem Skript darf PID 1 blockieren. Alles Unsichere laeuft im Hintergrund.
+set +e
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+
+USB_NET=rndis      # ncm = Windows 11 / Linux / macOS   |   rndis = Windows 10/11
+
+# ---------- 1. Dateisysteme ----------
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts /dev/shm /tmp /var/run /var/log /etc/dropbear /etc/wpa_supplicant
+mount -t devpts devpts /dev/pts -o mode=0620,gid=5 2>/dev/null
+mount -t tmpfs tmpfs /dev/shm 2>/dev/null
+mount -t tmpfs tmpfs /tmp 2>/dev/null
+mount -t configfs none /sys/kernel/config 2>/dev/null
+
+# ---------- 2. Konsole auf das AMOLED (tty0) ----------
+[ -c /dev/console ] && exec </dev/console >/dev/console 2>&1
+[ -x /usr/bin/decon-tool ] && /usr/bin/decon-tool 0x1281 2>/dev/null
+
+echo ""
+echo "=================================================="
+echo "    Samsung Galaxy S20+ Alpine Linux Server       "
+echo "=================================================="
+
+# ---------- 3. SSH (Dropbear) ----------
+passwd -d root >/dev/null 2>&1
+mkdir -p /etc/dropbear /root/.ssh
+if [ -s /root/.ssh/authorized_keys ]; then DB_AUTH="-s"; else DB_AUTH="-B"; fi
+if [ -s /etc/dropbear/dropbear_ed25519_host_key ] || [ -s /etc/dropbear/dropbear_rsa_host_key ]; then
+    dropbear -F -E $DB_AUTH -p 22 >>/var/log/dropbear.log 2>&1 &
+    if [ "$DB_AUTH" = "-s" ]; then
+        echo "[+] Dropbear SSH Port 22 (nur Key-Login)"
+    else
+        echo "[+] Dropbear SSH Port 22 (Root ohne Passwort!)"
+    fi
+else
+    echo "[-] Keine Dropbear-Hostkeys im Image -> SSH bleibt aus"
+fi
+
+# ---------- 4. USB-Gadget (ConfigFS): Netzwerk + Serial ----------
+setup_usb_gadget() (
+    G=/sys/kernel/config/usb_gadget/g1
+    [ -d /sys/kernel/config/usb_gadget ] || { echo "[-] ConfigFS/USB-Gadget fehlt im Kernel"; exit 1; }
+
+    # auf den UDC warten (DWC3 probt asynchron)
+    n=0
+    while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $n -lt 15 ]; do
+        sleep 1; n=$((n+1))
+    done
+    UDC_NAME=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+    [ -n "$UDC_NAME" ] || { echo "[-] Kein UDC gefunden"; exit 1; }
+
+    mkdir -p "$G" && cd "$G" || exit 1
+    echo 0x1d6b > idVendor 2>/dev/null
+    echo 0x0104 > idProduct 2>/dev/null
+    echo 0x0223 > bcdDevice 2>/dev/null
+    echo 0x0200 > bcdUSB 2>/dev/null
+    # IAD fuer Composite-Device (verhindert Code 28 unter Windows)
+    echo 0xef > bDeviceClass 2>/dev/null
+    echo 0x02 > bDeviceSubClass 2>/dev/null
+    echo 0x01 > bDeviceProtocol 2>/dev/null
+
+    mkdir -p strings/0x409
+    echo "S20PlusServer" > strings/0x409/product 2>/dev/null
+    echo "Linux"         > strings/0x409/manufacturer 2>/dev/null
+    echo "0123456789"    > strings/0x409/serialnumber 2>/dev/null
+    mkdir -p configs/c.1/strings/0x409
+    echo "Net + Serial" > configs/c.1/strings/0x409/configuration 2>/dev/null
+    echo 250 > configs/c.1/MaxPower 2>/dev/null
+
+    if [ "$USB_NET" = "rndis" ]; then
+        [ -d os_desc ] && echo 1 > os_desc/use 2>/dev/null
+        [ -d os_desc ] && echo 0xcd > os_desc/b_vendor_code 2>/dev/null
+        [ -d os_desc ] && echo MSFT100 > os_desc/qw_sign 2>/dev/null
+        mkdir -p functions/rndis.usb0
+        if [ -d functions/rndis.usb0/os_desc/interface.rndis ]; then
+            echo RNDIS   > functions/rndis.usb0/os_desc/interface.rndis/compatible_id 2>/dev/null
+            echo 5162001 > functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id 2>/dev/null
+        fi
+        ln -s functions/rndis.usb0 configs/c.1/ 2>/dev/null
+        ln -s configs/c.1 os_desc 2>/dev/null
+    else
+        mkdir -p functions/ncm.usb0
+        ln -s functions/ncm.usb0 configs/c.1/ 2>/dev/null
+    fi
+    mkdir -p functions/acm.usb0
+    ln -s functions/acm.usb0 configs/c.1/ 2>/dev/null
+
+    echo "$UDC_NAME" > UDC 2>/dev/null
+    echo "[+] USB-Gadget ($USB_NET + ACM) an $UDC_NAME gebunden"
+)
+
+# USB-Netzwerk im Hintergrund starten (blockiert PID 1 nicht)
+(
+    setup_usb_gadget
+    USB_IF=""
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        for n in rndis0 usb0; do
+            [ -d /sys/class/net/$n ] && { USB_IF=$n; break; }
+        done
+        [ -n "$USB_IF" ] && break
+        sleep 0.5
+    done
+    if [ -n "$USB_IF" ]; then
+        ip link set lo up 2>/dev/null
+        ip link set "$USB_IF" up 2>/dev/null
+        ip addr add 169.254.239.1/16 dev "$USB_IF" 2>/dev/null
+        ip addr add 10.42.0.2/24 dev "$USB_IF" 2>/dev/null
+        echo "[+] USB-Ethernet ($USB_IF): 169.254.239.1 und 10.42.0.2"
+        if [ -x /usr/sbin/dnsmasq ]; then
+            /usr/sbin/dnsmasq --interface="$USB_IF" --bind-interfaces \
+                --dhcp-range=10.42.0.10,10.42.0.50,12h --dhcp-option=3,10.42.0.2 2>/dev/null
+        fi
+    else
+        echo "[-] Kein USB-Netzwerk-Interface (usb0/rndis0)"
+    fi
+) &
+
+# ---------- 4b. Serielle Debug-Shell (COM-Port am PC) ----------
+(
+    for i in $(seq 1 30); do
+        if [ -f /sys/class/tty/ttyGS0/dev ]; then
+            maj=$(cut -d: -f1 /sys/class/tty/ttyGS0/dev)
+            min=$(cut -d: -f2 /sys/class/tty/ttyGS0/dev)
+            [ -c /dev/ttyGS0 ] || mknod /dev/ttyGS0 c "$maj" "$min"
+            break
+        fi
+        sleep 0.2
+    done
+    if [ -c /dev/ttyGS0 ]; then
+        echo "[+] Serielle Shell laeuft auf ttyGS0 (COM-Port)" > /dev/ttyGS0 2>/dev/null
+        while true; do
+            /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
+            sleep 1
+        done
+    fi
+) &
+
+# ---------- 5. Display-Ausschaltfunktion (AMOLED schont Akku & kein Burn-in) ----------
+turn_off_display() {
+    # 1. Konsole von Framebuffer trennen (verhindert Redraws)
+    for v in /sys/class/vtconsole/vtcon*; do
+        [ -e "$v/bind" ] && echo 0 > "$v/bind" 2>/dev/null
+    done
+    # 2. AMOLED Bildschirminhalt komplett mit Schwarz ueberschreiben (0 Watt)
+    [ -c /dev/fb0 ] || mknod /dev/fb0 c 29 0 2>/dev/null
+    if [ -c /dev/fb0 ]; then
+        dd if=/dev/zero of=/dev/fb0 bs=1M count=20 2>/dev/null
+    fi
+    # 3. Framebuffer blanken
+    echo 4 > /sys/class/graphics/fb0/blank 2>/dev/null || echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null
+    # 4. DECON Trigger aktivieren, damit der schwarze Frame auf das Panel uebertragen wird (AMOLED 0W)
+    [ -x /usr/bin/decon-tool ] && /usr/bin/decon-tool 0x1281 2>/dev/null
+    # 5. Cursor ausschalten, Konsole leeren
+    echo -en '\033[2J\033[1;1H\033[?25l\033[9;0]\033[14;0]' > /dev/tty0 2>/dev/null
+    echo -en '\033[2J\033[1;1H\033[?25l' > /dev/console 2>/dev/null
+    for b in /sys/class/backlight/*; do
+        [ -e "$b/brightness" ] && echo 0 > "$b/brightness" 2>/dev/null
+    done
+}
+
+
+# ---------- 5. Persistenter Datenspeicher (/data) ----------
+mount_data() {
+    echo "[*] Initialisiere persistenten Speicher (/data)..."
+    mkdir -p /data
+    
+    # Warte bis /dev/sda32 sichtbar ist (max 15s)
+    n=0
+    while [ ! -b /dev/sda32 ] && [ $n -lt 30 ]; do
+        sleep 0.5; n=$((n+1))
+    done
+
+    if [ ! -b /dev/sda32 ]; then
+        echo "[-] /dev/sda32 nicht gefunden -> boote ohne /data"
+        return 1
+    fi
+
+    # Sicherstellen, dass alle anderen Partitionen und LUNs schreibgeschuetzt sind
+    # (sda bleibt ro=0, damit Partition sda32 beschreibbar ist; sector-firewall im C-Treiber schuetzt sda-Sektoren)
+    for p in /dev/sda[0-9]*; do
+        [ "$p" != "/dev/sda32" ] && blockdev --setro "$p" 2>/dev/null
+    done
+    for d in /dev/sdb* /dev/sdc* /dev/sdd* /dev/sde*; do
+        blockdev --setro "$d" 2>/dev/null
+    done
+    blockdev --setrw /dev/sda32 2>/dev/null
+
+    # Prüfe GPT-Partitionsnamen
+    PARTNAME=$(grep PARTNAME /sys/class/block/sda32/uevent 2>/dev/null | cut -d= -f2)
+    if [ "$PARTNAME" != "userdata" ]; then
+        echo "[-] Partitionsname ist '$PARTNAME' (erwartet: 'userdata') -> ABBRUCH"
+        return 1
+    fi
+
+    # Mount-Versuch (zuerst ext4, dann f2fs)
+    if mount -t ext4 -o rw,noatime /dev/sda32 /data 2>/dev/null ||        mount -t f2fs -o rw,noatime /dev/sda32 /data 2>/dev/null; then
+        echo "[+] /data erfolgreich eingehängt!"
+        mkdir -p /data/projects /data/servers /data/backups /data/logs /data/cache /data/tmp
+        chmod 755 /data/projects
+        chmod 1777 /data/tmp
+        [ -x /data/scripts/autostart.sh ] && /data/scripts/autostart.sh &
+        return 0
+    fi
+
+    # Falls unformatiert / Android FBE verschluesselt und mkfs verfuegbar:
+    if [ -x /sbin/mkfs.ext4 ]; then
+        echo "[*] Formatiere /dev/sda32 mit ext4 (Label: S20DATA)..."
+        /sbin/mkfs.ext4 -F -L "S20DATA" -b 4096 /dev/sda32 2>/dev/null
+        if mount -t ext4 -o rw,noatime /dev/sda32 /data 2>/dev/null; then
+            echo "[+] /data nach Formatierung erfolgreich eingehängt!"
+            mkdir -p /data/projects /data/servers /data/backups /data/logs /data/cache /data/tmp
+            chmod 755 /data/projects
+            chmod 1777 /data/tmp
+        [ -x /data/scripts/autostart.sh ] && /data/scripts/autostart.sh &
+            return 0
+        fi
+    fi
+
+    echo "[-] /data Mount fehlgeschlagen -> boote weiter"
+    return 1
+}
+mount_data &
+
+# ---------- 6. Wi-Fi (BCM4375 an PCIe) ----------
+wifi_debug() {
+    mount -t debugfs none /sys/kernel/debug 2>/dev/null
+    dmesg 2>/dev/null > /tmp/dmesg.txt
+    {
+        echo "--- devices_deferred ---";  cat /sys/kernel/debug/devices_deferred 2>/dev/null
+        echo "--- gpio ---";              cat /sys/kernel/debug/gpio 2>/dev/null | grep -iE 'gpb0|gpf0|wl|pcie|perst'
+        echo "--- regulator ---";         grep -iE 'wl|pcie' /sys/kernel/debug/regulator/regulator_summary 2>/dev/null
+        echo "--- clk ---";               grep -iE 'pcie|32k|wlan' /sys/kernel/debug/clk/clk_summary 2>/dev/null
+        echo "--- pci devices ---";       ls /sys/bus/pci/devices 2>/dev/null
+        echo "--- dmesg ---";             dmesg 2>/dev/null | grep -iE 'pcie|brcm|dw-pcie|phy|s2mpu|iommu|firmware|wlan|regulator|clk'
+    } > /tmp/wifi-debug.txt 2>&1
+    echo "[-] Wi-Fi-Diagnose gespeichert: cat /tmp/wifi-debug.txt"
+}
+
+wifi_start() {
+    echo "[*] GPU: lade Panfrost Mali-G77..."
+    modprobe panfrost 2>/dev/null
+    echo "[*] Wi-Fi: lade Module..."
+    echo 1 > /sys/bus/pci/rescan 2>/dev/null
+    modprobe rfkill 2>/dev/null
+    modprobe cfg80211 2>/dev/null
+    modprobe brcmutil 2>/dev/null
+    modprobe brcmfmac-wcc 2>/dev/null || modprobe brcmfmac_wcc 2>/dev/null
+    modprobe brcmfmac 2>/dev/null
+    rfkill unblock all 2>/dev/null
+    echo 1 > /sys/bus/pci/rescan 2>/dev/null
+
+    # 1. Pruefe auf persistente Wi-Fi-Konfiguration auf /data
+    if [ -s /data/wpa_supplicant.conf ]; then
+        cp /data/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
+        chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
+    fi
+
+    # 2. Falls keine wpa_supplicant.conf existiert, erstelle generische Vorlage
+    if [ ! -s /etc/wpa_supplicant/wpa_supplicant.conf ]; then
+        mkdir -p /etc/wpa_supplicant
+        cat > /etc/wpa_supplicant/wpa_supplicant.conf <<'EOF'
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+
+# Keine vorkonfigurierten Netzwerke.
+# Verbinde im Terminal per: wifi-connect <SSID> <PASSWORT>
+EOF
+        chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
+    fi
+
+    IF=""
+    n=0
+    while [ $n -lt 45 ]; do
+        IF=$(ls /sys/class/net 2>/dev/null | grep -E '^(wlan|wlp)' | head -n 1)
+        [ -n "$IF" ] && break
+        n=$((n+1)); sleep 1
+    done
+
+    if [ -z "$IF" ]; then
+        echo "[-] Kein WLAN-Interface."
+        wifi_debug
+        dmesg 2>/dev/null | grep -iE 'pcie|brcm' | tail -n 8
+        return
+    fi
+
+    echo "[+] Wi-Fi-Interface: $IF"
+    ip link set "$IF" up 2>/dev/null
+    mkdir -p /var/run/wpa_supplicant
+    wpa_supplicant -B -i "$IF" -c /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null || \
+        wpa_supplicant -B -D nl80211,wext -i "$IF" -c /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null
+    udhcpc -i "$IF" -b -s /usr/share/udhcpc/default.script -p /var/run/udhcpc.$IF.pid 2>/dev/null
+
+    t=0
+    while [ $t -lt 30 ]; do
+        sleep 1; t=$((t+1))
+        WIFI_IP=$(ip -4 addr show dev "$IF" 2>/dev/null | grep -o 'inet [0-9.]*' | awk '{print $2}')
+        if [ -n "$WIFI_IP" ]; then
+            echo "=================================================="
+            echo "    [+] WI-FI VERBUNDEN: $WIFI_IP"
+            echo "    [+] SSH: ssh root@$WIFI_IP"
+            echo "    [+] Web Terminal & Control: http://$WIFI_IP"
+            echo "=================================================="
+            echo "$WIFI_IP" > /tmp/wifi_ip.txt
+            if [ -x /usr/bin/ttyd ]; then
+                killall -9 ttyd 2>/dev/null
+                nohup ttyd -W -p 7681 /bin/sh >/var/log/ttyd.log 2>&1 &
+            fi
+            if [ -x /usr/bin/s20_dashboard.py ]; then
+                pkill -f s20_dashboard.py 2>/dev/null
+                nohup python3 /usr/bin/s20_dashboard.py >/var/log/dashboard.log 2>&1 &
+            fi
+            return
+        fi
+    done
+    echo "[-] Wi-Fi-Interface da, aber keine IP"
+}
+wifi_start &
+
+# ---------- 7. Automatisches Display-Ausschalten nach dem Boot ----------
+(
+    # 12 Sekunden anzeigen, damit der Boot-Status sichtbar ist, dann Display komplett dunkel
+    sleep 12
+    turn_off_display
+) &
+
+echo "=================================================="
+echo "    Server gestartet. WLAN verbindet im Hintergrund."
+echo "    Display schaltet nach 12s automatisch komplett ab."
+echo "=================================================="
+
+# Wiederholtes Blanking sicherstellen (AMOLED 0 Watt, kein Aufwecken)
+(
+    while true; do
+        sleep 60
+        turn_off_display
+    done
+) &
+
+# PID 1 darf nie enden (haelt den Server am Leben)
+while true; do
+    sleep 3600
+done

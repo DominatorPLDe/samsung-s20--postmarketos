@@ -1,0 +1,351 @@
+// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+/*
+ * Samsung Galaxy S20+ (SM-G985F / y2s / y2slte) device tree source
+ * Configured with PCIe BCM4375 Wi-Fi, S2MPU table, 8GB RAM memory map, and USB peripheral
+ */
+
+/dts-v1/;
+#include "exynos990.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	model = "Samsung Galaxy S20+";
+	compatible = "samsung,y2s", "samsung,y2slte", "samsung,exynos990";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		bootargs = "console=tty0 console=ttyGS0,115200 root=/dev/ram0 rw init=/init";
+
+		framebuffer0: framebuffer@f1000000 {
+			compatible = "simple-framebuffer";
+			reg = <0 0xf1000000 0 (1440 * 3200 * 4)>;
+			width = <1440>;
+			height = <3200>;
+			stride = <(1440 * 4)>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00000000 0x80000000 0x00000000 0x3d000000>,
+		      <0x00000000 0xc1200000 0x00000000 0x1b700000>,
+		      <0x00000000 0xe1900000 0x00000000 0x1e700000>,
+		      <0x00000008 0x80000000 0x00000001 0x7ec00000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		cont_splash_mem: framebuffer@f1000000 {
+			reg = <0 0xf1000000 0 0x1194000>;
+			no-map;
+		};
+
+		abox_reserved: audio@f7fb0000 {
+			reg = <0 0xf7fb0000 0 0x2a50000>;
+			no-map;
+		};
+
+		/*
+		 * Samsung EL2 owns this table and updates it through
+		 * HVC_FID_SET_S2MPU_FOR_WIFI. Exposing these pages to the
+		 * Linux allocator corrupts PCIe DMA permissions.
+		 */
+		ramoops@f0000000 {
+			compatible = "ramoops";
+			reg = <0 0xf0000000 0 0x100000>;
+			console-size = <0x80000>;
+			record-size = <0x20000>;
+			pmsg-size = <0x20000>;
+			ecc = <0>;
+		};
+
+		s2mpu_table: s2mpu-table@c1800000 {
+			compatible = "exynos,s2mpu_table";
+			reg = <0 0xc1800000 0 0x300000>;
+			no-map;
+		};
+	};
+
+	s2mpu {
+		compatible = "samsung,exynos-s2mpu";
+		instance-num = <34>;
+		instance-names = "aud", "csis_d0", "csis_d1",
+				 "dpu0", "dpu1", "dpu2", "ipp",
+				 "tnr_d0", "tnr_d1", "dns",
+				 "mcsc_d0", "mcsc_d1",
+				 "g2d_d0", "g2d_d1", "g2d_d2",
+				 "dnc_d0", "dnc_d1", "dnc_d2",
+				 "dnc_d3", "dnc_d4", "vra",
+				 "mfc_d0", "mfc_d1",
+				 "hsi0", "hsi1", "hsi2",
+				 "acvps", "secu", "dit", "sbic",
+				 "g3d0", "g3d1", "g3d2", "g3d3";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-0 = <&key_power &key_voldown &key_volup>;
+		pinctrl-names = "default";
+
+		power-key {
+			label = "Power";
+			linux,code = <KEY_POWER>;
+			gpios = <&gpa2 4 GPIO_ACTIVE_LOW>;
+			wakeup-source;
+		};
+		voldown-key {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&gpa0 4 GPIO_ACTIVE_LOW>;
+		};
+		volup-key {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&gpa0 3 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	
+	ufs_vcc_reg: regulator-ufs-vcc {
+		compatible = "regulator-fixed";
+		regulator-name = "ufs-vcc";
+		gpio = <&gpg1 0 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	wlan_power: regulator-wlan {
+		compatible = "regulator-fixed";
+		regulator-name = "wlan-enable";
+		gpio = <&gpb0 4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+		regulator-always-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&cfg_wlanen>;
+	};
+
+	pcie_wifi: pcie@133b0000 {
+		compatible = "samsung,exynos990-pcie";
+		reg = <0x0 0x133b0000 0x0 0x1000>,
+		      <0x0 0x133e0000 0x0 0x1000>,
+		      <0x0 0x133f0000 0x0 0x1000>,
+		      <0x0 0x133d0000 0x0 0x01fc>,
+		      <0x0 0x11ffe000 0x0 0x2000>,
+		      <0x0 0x13000000 0x0 0x4000>;
+		reg-names = "elbi", "phy", "dbi", "pcs", "config", "cmu";
+		interrupts = <GIC_SPI 314 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "pcie";
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0x0 0x0 0x0 0x0>;
+		interrupt-map = <0x0 0x0 0x0 0x0
+				 &gic GIC_SPI 314 IRQ_TYPE_LEVEL_HIGH>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+		device_type = "pci";
+		linux,pci-domain = <0>;
+		bus-range = <0x00 0xff>;
+		ranges = <0x82000000 0x0 0x11000000
+			  0x0 0x11000000
+			  0x0 0x00ff0000>;
+		num-lanes = <1>;
+		max-link-speed = <1>;
+		reset-gpios = <&gpf0 1 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pcie0_clkreq &pcie0_perst>;
+		clocks = <&cmu_top CLK_GOUT_CMU_HSI1_PCIE>;
+		clock-names = "pcie";
+		samsung,sysreg = <&sysreg_hsi1>;
+		samsung,pmu = <&pmu_system_controller>;
+		vpcie-supply = <&wlan_power>;
+		status = "okay";
+	};
+		/* Real measured hardware clocks for the clusters */
+	cpucl0_clk: clock-cpucl0 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <1048000000>;
+		clock-output-names = "cpucl0_clk";
+	};
+
+	cpucl1_clk: clock-cpucl1 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <1064000000>;
+		clock-output-names = "cpucl1_clk";
+	};
+
+	cpucl2_clk: clock-cpucl2 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <1063000000>;
+		clock-output-names = "cpucl2_clk";
+	};
+
+	arm-m5-pmu {
+		compatible = "arm,armv8-pmuv3";
+		interrupts = <GIC_SPI 169 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-affinity = <&cpu6>, <&cpu7>;
+	};
+
+
+
+	/* Honest single-OPP tables matching real hardware baseline */
+	cpu0_opp_table: opp-table-0 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-1048000000 {
+			opp-hz = /bits/ 64 <1048000000>;
+			opp-microvolt = <662500>;
+			opp-microwatt = <65000>;
+		};
+	};
+
+	cpu4_opp_table: opp-table-1 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-1064000000 {
+			opp-hz = /bits/ 64 <1064000000>;
+			opp-microvolt = <725000>;
+			opp-microwatt = <240000>;
+		};
+	};
+
+	cpu6_opp_table: opp-table-2 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-1063000000 {
+			opp-hz = /bits/ 64 <1063000000>;
+			opp-microvolt = <800000>;
+			opp-microwatt = <750000>;
+		};
+	};
+
+};
+
+&oscclk {
+	clock-frequency = <26000000>;
+};
+
+&pinctrl_alive {
+	key_power: key-power-pins {
+		samsung,pins = "gpa2-4";
+		samsung,pin-function = <EXYNOS_PIN_FUNC_EINT>;
+		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
+		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
+	};
+	key_voldown: key-voldown-pins {
+		samsung,pins = "gpa0-4";
+		samsung,pin-function = <EXYNOS_PIN_FUNC_EINT>;
+		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
+		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
+	};
+	key_volup: key-volup-pins {
+		samsung,pins = "gpa0-3";
+		samsung,pin-function = <EXYNOS_PIN_FUNC_EINT>;
+		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
+		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
+	};
+};
+
+&usbdrd_dwc3 {
+	dr_mode = "peripheral";
+	maximum-speed = "high-speed";
+	snps,dis_u2_susphy_quirk;
+	snps,dis_enblslpm_quirk;
+};
+
+&mmc_2 {
+	status = "disabled";
+};
+
+&cmu_aud {
+	status = "disabled";
+};
+
+&pd_aud {
+	status = "disabled";
+};
+
+&ufs_0 {
+	vcc-supply = <&ufs_vcc_reg>;
+	status = "okay";
+};
+
+&acpm_ipc {
+	status = "okay";
+};
+
+
+&cpu0 {
+	capacity-dmips-mhz = <242>;
+	clocks = <&cpucl0_clk>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	dynamic-power-coefficient = <140>;
+};
+
+&cpu1 {
+	capacity-dmips-mhz = <242>;
+	clocks = <&cpucl0_clk>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	dynamic-power-coefficient = <140>;
+};
+
+&cpu2 {
+	capacity-dmips-mhz = <242>;
+	clocks = <&cpucl0_clk>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	dynamic-power-coefficient = <140>;
+};
+
+&cpu3 {
+	capacity-dmips-mhz = <242>;
+	clocks = <&cpucl0_clk>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	dynamic-power-coefficient = <140>;
+};
+
+&cpu4 {
+	capacity-dmips-mhz = <749>;
+	clocks = <&cpucl1_clk>;
+	operating-points-v2 = <&cpu4_opp_table>;
+	dynamic-power-coefficient = <500>;
+};
+
+&cpu5 {
+	capacity-dmips-mhz = <749>;
+	clocks = <&cpucl1_clk>;
+	operating-points-v2 = <&cpu4_opp_table>;
+	dynamic-power-coefficient = <500>;
+};
+
+&cpu6 {
+	capacity-dmips-mhz = <1024>;
+	clocks = <&cpucl2_clk>;
+	operating-points-v2 = <&cpu6_opp_table>;
+	dynamic-power-coefficient = <1500>;
+};
+
+&cpu7 {
+	capacity-dmips-mhz = <1024>;
+	clocks = <&cpucl2_clk>;
+	operating-points-v2 = <&cpu6_opp_table>;
+	dynamic-power-coefficient = <1500>;
+};

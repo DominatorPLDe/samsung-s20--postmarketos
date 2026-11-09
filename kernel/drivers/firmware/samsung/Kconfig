@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+config EXYNOS_ACPM
+	tristate "Samsung Exynos ACPM Protocol Driver"
+	depends on MAILBOX
+	default y
+	help
+	  Protocol driver for Samsung ACPM (APM coprocessor) on Exynos SoCs.

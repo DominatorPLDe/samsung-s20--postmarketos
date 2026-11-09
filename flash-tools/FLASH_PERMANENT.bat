@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Samsung Galaxy S20+ - Permanenter Flash
 color 0e
@@ -15,20 +15,31 @@ echo.
 echo Voraussetzung: lk3rd Bootloader muss auf dem Geraet installiert sein.
 echo lk3rd (/dev/sda13) bleibt voellig unberuehrt.
 echo.
-set "IMAGE=..\imagesoot_community.img"
-if not exist "%IMAGE%" set "IMAGE=boot_community.img"
+
+set "IMAGE=%~dp0..\images\boot_community.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0boot_community.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0..\boot_community.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0..\boot.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0..\boot_PRODUCTION_FLASH.img"
 
 if not exist "%IMAGE%" (
-    echo [-] FEHLER: Boot-Image nicht gefunden: %IMAGE%
+    echo [-] FEHLER: Boot-Image nicht gefunden!
+    echo     Gepruefte Pfade:
+    echo     - %~dp0..\images\boot_community.img
+    echo     - %~dp0boot_community.img
+    echo     - %~dp0..\boot_community.img
+    echo     - %~dp0..\boot.img
+    echo.
     pause
     exit /b 1
 )
 
-echo Image: %IMAGE%
+echo [+] Verwende Image: %IMAGE%
 echo.
 set /p CONFIRM="Moechtest du jetzt dauerhaft flashen? (J/N): "
 if /i not "%CONFIRM%"=="J" (
-    echo Abbruch durch Benutzer.
+    echo.
+    echo [*] Vorgang durch Benutzer abgebrochen.
     pause
     exit /b 0
 )
@@ -70,9 +81,9 @@ echo Kuenftig bootet das Handy bei jedem Einschalten oder Stromausfall
 echo vollkommen autark ohne PC und ohne Kabel direkt in Linux.
 echo.
 echo Erstkontakt ueber USB-C-Kabel:
-echo - Dashboard: http://10.42.0.2
+echo - Dashboard:    http://10.42.0.2
 echo - Web-Terminal: http://10.42.0.2:7681
-echo - SSH: ssh root@10.42.0.2
+echo - SSH:          ssh root@10.42.0.2
 echo.
 echo Nach Verbindung per Terminal:
 echo 'wifi-connect <SSID> <Passwort>' speichert dein WLAN dauerhaft ab.

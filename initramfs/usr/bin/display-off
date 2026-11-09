@@ -1,0 +1,12 @@
+#!/bin/sh
+# Turn off AMOLED display (0 Watt blanking & no burn-in)
+for b in /sys/class/backlight/*; do
+    [ -f "$b/brightness" ] && echo 0 > "$b/brightness" 2>/dev/null
+done
+[ -c /dev/fb0 ] || mknod /dev/fb0 c 29 0 2>/dev/null
+if [ -c /dev/fb0 ]; then
+    dd if=/dev/zero of=/dev/fb0 bs=1M count=20 2>/dev/null
+fi
+echo 4 > /sys/class/graphics/fb0/blank 2>/dev/null || echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null
+[ -x /usr/bin/decon-tool ] && /usr/bin/decon-tool 0x1281 2>/dev/null
+exit 0

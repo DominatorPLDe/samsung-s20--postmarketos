@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Samsung Galaxy S20+ - RAM-Boot Test (Fluechtig)
 color 0b
@@ -12,16 +12,26 @@ echo.
 echo Dieses Skript sendet das Boot-Image temporaer in den Arbeitsspeicher.
 echo Es werden KEINE Partitionen ueberschrieben oder dauerhaft veraendert.
 echo.
-set "IMAGE=..\imagesoot_community.img"
-if not exist "%IMAGE%" set "IMAGE=boot_community.img"
+
+set "IMAGE=%~dp0..\images\boot_community.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0boot_community.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0..\boot_community.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0..\boot.img"
+if not exist "%IMAGE%" set "IMAGE=%~dp0..\boot_PRODUCTION_FLASH.img"
 
 if not exist "%IMAGE%" (
-    echo [-] FEHLER: Boot-Image nicht gefunden: %IMAGE%
+    echo [-] FEHLER: Boot-Image nicht gefunden!
+    echo     Gepruefte Pfade:
+    echo     - %~dp0..\images\boot_community.img
+    echo     - %~dp0boot_community.img
+    echo     - %~dp0..\boot_community.img
+    echo     - %~dp0..\boot.img
+    echo.
     pause
     exit /b 1
 )
 
-echo Image: %IMAGE%
+echo [+] Verwende Image: %IMAGE%
 echo.
 echo Warte auf Fastboot-Geraet am USB-Port...
 echo (Halte am ausgeschalteten Handy LEISER gedrueckt und schliesse das USB-Kabel an)

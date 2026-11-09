@@ -1,0 +1,12 @@
+#!/bin/sh
+# Turn on AMOLED display
+echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
+for b in /sys/class/backlight/*; do
+    if [ -f "$b/max_brightness" ]; then
+        MAX_B=$(cat "$b/max_brightness" 2>/dev/null || echo 255)
+        echo "$MAX_B" > "$b/brightness" 2>/dev/null
+    elif [ -f "$b/brightness" ]; then
+        echo 128 > "$b/brightness" 2>/dev/null
+    fi
+done
+exit 0

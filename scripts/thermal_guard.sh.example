@@ -11,8 +11,6 @@
 # L3 -> L2: < 82°C
 # L2 -> L1: < 72°C
 # L1 -> L0: < 62°C
-#
-# In sparsam/boost: Behaelt bisherige Drosselung bei >= 85°C / Freigabe bei <= 75°C.
 
 log_msg() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -24,15 +22,47 @@ get_max_temp() {
         return
     fi
     MAX=0
-    for tz in 1 2 3; do
-        if [ -f /sys/class/thermal/thermal_zone${tz}/temp ]; then
-            T=$(cat /sys/class/thermal/thermal_zone${tz}/temp 2>/dev/null)
-            T_C=$((T / 1000))
-            if [ "$T_C" -gt "$MAX" ]; then
-                MAX=$T_C
-            fi
+    FOUND=0
+
+    # Dynamische Erkennung aller verfuegbaren Thermal-Zonen im System
+    for z in /sys/class/thermal/thermal_zone*; do
+        [ -d "$z" ] || continue
+        # Sensor-Typ pruefen: Reine Akku-Sensoren ignorieren (messen nicht die CPU)
+        TYPE=$(cat "$z/type" 2>/dev/null || echo "unknown")
+        case "$TYPE" in
+            *battery*|*max170xx*)
+                continue
+                ;;
+        esac
+
+        if [ -f "$z/temp" ]; then
+            T=$(cat "$z/temp" 2>/dev/null)
+            # Numerische Validierung (verhindert Syntaxfehler bei Leer- oder Fehler-Rueckgabe)
+            case "$T" in
+                ''|*[!0-9]*)
+                    continue
+                    ;;
+                *)
+                    if [ "$T" -gt 0 ]; then
+                        T_C=$((T / 1000))
+                        # Plausibilitaetspruefung fuer SoC-Temperaturen (15°C bis 125°C)
+                        if [ "$T_C" -ge 15 ] && [ "$T_C" -le 125 ]; then
+                            [ "$T_C" -gt "$MAX" ] && MAX=$T_C
+                            FOUND=1
+                        fi
+                    fi
+                    ;;
+            esac
         fi
     done
+
+    # Falls keine Zone ausgelesen werden konnte: Sicherheitswert (Fail-Safe)
+    if [ "$FOUND" -eq 0 ] || [ "$MAX" -eq 0 ]; then
+        # Sicherheitswert 75°C waehlt Schutzlevel 2, anstatt ungedrosselt zu ueberhitzen
+        echo 75
+        return
+    fi
+
     echo "$MAX"
 }
 
@@ -107,9 +137,9 @@ apply_limits() {
                     CAP0=650000;  CAP4=693000;  CAP6=546000
                     ;;
             esac
-            echo "$CAP0" > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
-            echo "$CAP4" > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
-            echo "$CAP6" > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+            [ -f /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq ] && echo "$CAP0" > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
+            [ -f /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq ] && echo "$CAP4" > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
+            [ -f /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq ] && echo "$CAP6" > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
             echo "$NEW_LVL" > /data/guard_level
             log_msg "[AUTO] Temp ${T_CUR}°C (Level $NEW_LVL): Caps gesetzt -> A55=${CAP0}k, A76=${CAP4}k, M5=${CAP6}k"
         fi
@@ -119,17 +149,17 @@ apply_limits() {
         if [ "$T_CUR" -ge 85 ]; then
             if [ "$THROTTLED" -ne 1 ] || [ "$FORCE" = "force" ]; then
                 log_msg "[SPARSAM-ALARM] Temp ${T_CUR}°C >= 85°C: Drosselung aktiv (A55=650k, A76=693k, M5=546k)"
-                echo 650000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
-                echo 693000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
-                echo 546000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq ] && echo 650000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq ] && echo 693000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq ] && echo 546000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
                 echo 1 > /data/guard_throttled
             fi
         elif [ "$T_CUR" -le 75 ]; then
             if [ "$THROTTLED" -ne 0 ] || [ "$FORCE" = "force" ]; then
                 log_msg "[SPARSAM-NORMAL] Temp ${T_CUR}°C <= 75°C: Normal-Caps (A55=1690k, A76=2074k, M5=546k)"
-                echo 1690000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
-                echo 2074000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
-                echo 546000  > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq ] && echo 1690000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq ] && echo 2074000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq ] && echo 546000  > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
                 echo 0 > /data/guard_throttled
             fi
         fi
@@ -140,17 +170,17 @@ apply_limits() {
         if [ "$T_CUR" -ge 85 ]; then
             if [ "$THROTTLED" -ne 1 ] || [ "$FORCE" = "force" ]; then
                 log_msg "[BOOST-ALARM] Temp ${T_CUR}°C >= 85°C: Drosselung aktiv (A55=650k, A76=693k, M5=546k)"
-                echo 650000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
-                echo 693000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
-                echo 546000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq ] && echo 650000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq ] && echo 693000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq ] && echo 546000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
                 echo 1 > /data/guard_throttled
             fi
         elif [ "$T_CUR" -le 75 ]; then
             if [ "$THROTTLED" -ne 0 ] || [ "$FORCE" = "force" ]; then
                 log_msg "[BOOST-NORMAL] Temp ${T_CUR}°C <= 75°C: Normal-Caps (A55=1690k, A76=2074k, M5=${M5_BOOST}k)"
-                echo 1690000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
-                echo 2074000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
-                echo "$M5_BOOST" > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq ] && echo 1690000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq ] && echo 2074000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
+                [ -f /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq ] && echo "$M5_BOOST" > /sys/devices/system/cpu/cpufreq/policy6/scaling_max_freq 2>/dev/null
                 echo 0 > /data/guard_throttled
             fi
         fi
